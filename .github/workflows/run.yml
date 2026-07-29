@@ -55,6 +55,7 @@ jobs:
       - name: Start services
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
         run: |
           set -Eeuo pipefail
           (
