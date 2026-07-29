@@ -54,7 +54,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           uv sync
-          uv pip install camoufox curl_cffi
+          ./.venv/bin/python -m pip install camoufox curl_cffi
           uv pip install -r ../turb-gpt-free-register/requirements.txt
           npm install --prefix web
           NEXT_PUBLIC_APP_VERSION="$(cat VERSION)" npm run build --prefix web
@@ -63,7 +63,7 @@ jobs:
 
       - name: Download Camoufox browser
         working-directory: chatgpt2api
-        run: uv run python -m camoufox fetch
+        run: ./.venv/bin/python -m camoufox fetch
 
       - name: Install and start WARP SOCKS5
         run: |
