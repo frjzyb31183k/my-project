@@ -62,11 +62,8 @@ jobs:
             STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          (
-            cd turb-gpt-free-register
-            python web.py --host 127.0.0.1 --port 5000 > ../register.log 2>&1 &
-            echo $! > /tmp/register.pid
-          )
+          uv run --directory chatgpt2api python turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 > register.log 2>&1 &
+          echo $! > /tmp/register.pid
 
           ready() {
             local url="$1" pid_file="$2"
@@ -85,15 +82,14 @@ jobs:
         run: |
           set -Eeuo pipefail
           [ -n "$CF_TUNNEL_TOKEN" ] || { echo "CF_TUNNEL_TOKEN secret is not set"; exit 1; }
-          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
-          chmod +x /usr/local/bin/cloudflared
-          nohup cloudflared tunnel --no-autoupdate run --token "$CF_TUNNEL_TOKEN" > tunnel.log 2>&1 &
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o "$RUNNER_TEMP/cloudflared"
+          chmod +x "$RUNNER_TEMP/cloudflared"
+          nohup "$RUNNER_TEMP/cloudflared" tunnel --no-autoupdate run --token "$CF_TUNNEL_TOKEN" > tunnel.log 2>&1 &
           echo $! > /tmp/cloudflared.pid
           sleep 10
           kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
 
       - name: Keep services alive
-        if: always()
         run: |
           set -u
           end=$((SECONDS + RUN_DURATION))
@@ -114,6 +110,6 @@ jobs:
             [ -f "$log" ] || continue
             echo "=== $log ==="
             tail -100 "$log" | sed -E \
-              -e 's#https?://[^[:space:]]+#<url>#g' \
+              -e 's#(https?|postgres(ql)?)://[^[:space:]]+#<url>#g' \
               -e 's#(token|authorization|cookie|password)[=: ]+[^[:space:]]+#\1=***#Ig' || true
           done
