@@ -60,19 +60,53 @@ jobs:
           mv web/out web_dist
         working-directory: chatgpt2api
 
+      - name: Install and start WARP SOCKS5
+        run: |
+          set -Eeuo pipefail
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cloudflare-warp
+          sudo systemctl start warp-svc
+          sleep 3
+          warp-cli --accept-tos registration new || true
+          warp-cli --accept-tos mode proxy
+          warp-cli --accept-tos connect
+          for _ in $(seq 1 30); do
+            ss -ltn | grep -q ':40000' && break
+            sleep 1
+          done
+          ss -ltn | grep -q ':40000' || { echo "WARP SOCKS5 port 40000 not listening"; warp-cli --accept-tos status || true; exit 1; }
+          code=$(curl --silent --show-error --max-time 20 --output /dev/null --write-out "%{http_code}" --socks5-hostname 127.0.0.1:40000 https://accounts.x.ai/)
+          [ "$code" != "000" ] || { echo "WARP SOCKS5 transport failed"; exit 1; }
+          echo "WARP SOCKS5 ready: 127.0.0.1:40000 (HTTP $code)"
+
       - name: Start services
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
           WEBUI_AUTH_CODE: ${{ secrets.WEBUI_AUTH_CODE }}
+          CHATGPT2API_PROXY_RUNTIME_ENABLED: "true"
+          CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
+          CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
+          CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
+          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "false"
+          PROXY_POOL: socks5h://127.0.0.1:40000
+          PLAN_CHECK_PROXY: socks5h://127.0.0.1:40000
+          PLAN_CHECK_PROXY_MODE: proxy
         run: |
           set -Eeuo pipefail
           (
             cd chatgpt2api
+            CHATGPT2API_CONFIG_FILE="$PWD/config.json" uv run python scripts/init_proxy_config.py
             STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          env -u DATABASE_URL uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 --auth-code "$WEBUI_AUTH_CODE" > register.log 2>&1 &
+          env -u DATABASE_URL \
+            PROXY_POOL="$PROXY_POOL" \
+            PLAN_CHECK_PROXY="$PLAN_CHECK_PROXY" \
+            PLAN_CHECK_PROXY_MODE="$PLAN_CHECK_PROXY_MODE" \
+            uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 --auth-code "$WEBUI_AUTH_CODE" > register.log 2>&1 &
           echo $! > /tmp/register.pid
 
           ready() {
