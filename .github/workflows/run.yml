@@ -89,10 +89,13 @@ jobs:
       - name: Batch register 300
         working-directory: chatgpt2api
         run: |
-          export CAMOUFOX_USE_PROXY=false
+          export CAMOUFOX_USE_PROXY=true
           export REGISTRATION_DRIVER=camoufox
           export EMAIL_SOURCE=tempmail,qxfy,cloudflare
           export USE_EMAIL_SERVICE=true
+          export PROXY_POOL=socks5h://127.0.0.1:40000
+          export PLAN_CHECK_PROXY=socks5h://127.0.0.1:40000
+          export PLAN_CHECK_PROXY_MODE=proxy
           ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 1 --continue-on-fail
 
       - name: Start services
