@@ -109,6 +109,7 @@ jobs:
               sub_filter_types text/html application/javascript;
               sub_filter "'/api/" "'/register/api/";
               sub_filter '"/api/' '"/register/api/';
+              sub_filter 'action="/login"' 'action="/register/login"';
               sub_filter 'action="/logout"' 'action="/register/logout"';
             }
             location / {
