@@ -1,4 +1,4 @@
-name: Run Service
+name: Run 
 
 on:
   workflow_dispatch:
