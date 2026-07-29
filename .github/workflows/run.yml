@@ -45,11 +45,19 @@ jobs:
           version: latest
           python-version: "3.13"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install dependencies
         run: |
           set -Eeuo pipefail
           uv sync
           uv pip install --python .venv/bin/python -r ../turb-gpt-free-register/requirements.txt
+          npm install --prefix web
+          NEXT_PUBLIC_APP_VERSION="$(cat VERSION)" npm run build --prefix web
+          mv web/out web_dist
         working-directory: chatgpt2api
 
       - name: Start services
