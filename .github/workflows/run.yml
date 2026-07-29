@@ -60,6 +60,10 @@ jobs:
           mv web/out web_dist
         working-directory: chatgpt2api
 
+      - name: Download Camoufox browser
+        working-directory: chatgpt2api
+        run: uv run python -m camoufox fetch
+
       - name: Install and start WARP SOCKS5
         run: |
           set -Eeuo pipefail
