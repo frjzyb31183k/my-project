@@ -54,7 +54,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           uv sync
-          uv pip install --python .venv/bin/python camoufox
+          uv pip install --python .venv/bin/python camoufox curl_cffi
           uv pip install --python .venv/bin/python -r ../turb-gpt-free-register/requirements.txt
           npm install --prefix web
           NEXT_PUBLIC_APP_VERSION="$(cat VERSION)" npm run build --prefix web
