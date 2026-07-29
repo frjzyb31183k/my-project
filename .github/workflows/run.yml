@@ -74,8 +74,8 @@ jobs:
             done
             return 1
           }
-          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid || { echo "chatgpt2api failed to become ready"; exit 1; }
-          ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; exit 1; }
+          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
+          ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; tail -100 register.log; exit 1; }
           echo "Services ready"
 
       - name: Route gpt paths locally
