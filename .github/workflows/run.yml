@@ -78,6 +78,43 @@ jobs:
           ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; exit 1; }
           echo "Services ready"
 
+      - name: Route gpt paths locally
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx
+          sudo tee /etc/nginx/sites-available/gpt >/dev/null <<'EOF'
+          server {
+            listen 127.0.0.1:8080;
+
+            location = /register { return 301 /register/; }
+            location /register/ {
+              proxy_pass http://127.0.0.1:5000/;
+              proxy_set_header Host $host;
+              proxy_set_header X-Forwarded-Proto https;
+              proxy_set_header Accept-Encoding "";
+              proxy_redirect ~^(/.*)$ /register$1;
+              proxy_cookie_path / /register/;
+              sub_filter_once off;
+              sub_filter_types text/html application/javascript;
+              sub_filter "'/api/" "'/register/api/";
+              sub_filter '"/api/' '"/register/api/';
+              sub_filter 'action="/logout"' 'action="/register/logout"';
+            }
+            location / {
+              proxy_pass http://127.0.0.1:8000;
+              proxy_set_header Host $host;
+              proxy_set_header X-Forwarded-Proto https;
+            }
+          }
+          EOF
+          sudo ln -sf /etc/nginx/sites-available/gpt /etc/nginx/sites-enabled/gpt
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo nginx -t
+          sudo systemctl restart nginx
+          curl -fsS -m 3 http://127.0.0.1:8080/health >/dev/null
+          curl -fsS -m 3 http://127.0.0.1:8080/register/login >/dev/null
+
       - name: Start Cloudflare Tunnel
         run: |
           set -Eeuo pipefail
