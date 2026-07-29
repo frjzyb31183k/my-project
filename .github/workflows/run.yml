@@ -56,6 +56,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
+          WEBUI_AUTH_CODE: ${{ secrets.WEBUI_AUTH_CODE }}
         run: |
           set -Eeuo pipefail
           (
@@ -63,7 +64,7 @@ jobs:
             STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          env -u DATABASE_URL uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 > register.log 2>&1 &
+          env -u DATABASE_URL uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 --auth-code "$WEBUI_AUTH_CODE" > register.log 2>&1 &
           echo $! > /tmp/register.pid
 
           ready() {
