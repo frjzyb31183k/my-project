@@ -85,6 +85,14 @@ jobs:
           [ "$code" != "000" ] || { echo "WARP SOCKS5 transport failed"; exit 1; }
           echo "WARP SOCKS5 ready: 127.0.0.1:40000 (HTTP $code)"
 
+      - name: Batch register 300 accounts (CLI)
+        working-directory: chatgpt2api
+        run: |
+          export CAMOUFOX_USE_PROXY=false
+          export REGISTRATION_DRIVER=camoufox
+          export EMAIL_SOURCE=tempmail,qxfy,cloudflare
+          uv run python -u ../turb-gpt-free-register/main.py -n 300 --workers 1
+
       - name: Start services
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
