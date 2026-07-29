@@ -1,0 +1,119 @@
+name: Run Service
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-group
+  cancel-in-progress: false
+
+env:
+  CHATGPT2API_REPO: frjzyb31183k/chatgpt2api
+  REGISTER_REPO: frjzyb31183k/turb-gpt-free-register
+  RUN_DURATION: 19800
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout chatgpt2api
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CHATGPT2API_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: chatgpt2api
+          fetch-depth: 1
+
+      - name: Checkout registration service
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REGISTER_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: turb-gpt-free-register
+          fetch-depth: 1
+
+      - name: Set up Python and uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: latest
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -Eeuo pipefail
+          uv sync
+          uv run python -m pip install --disable-pip-version-check -r ../turb-gpt-free-register/requirements.txt
+        working-directory: chatgpt2api
+
+      - name: Start services
+        run: |
+          set -Eeuo pipefail
+          (
+            cd chatgpt2api
+            STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
+            echo $! > /tmp/chatgpt2api.pid
+          )
+          (
+            cd turb-gpt-free-register
+            python web.py --host 127.0.0.1 --port 5000 > ../register.log 2>&1 &
+            echo $! > /tmp/register.pid
+          )
+
+          ready() {
+            local url="$1" pid_file="$2"
+            for _ in $(seq 1 90); do
+              curl -fsS -m 3 "$url" >/dev/null && return 0
+              kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
+              sleep 2
+            done
+            return 1
+          }
+          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid || { echo "chatgpt2api failed to become ready"; exit 1; }
+          ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; exit 1; }
+          echo "Services ready"
+
+      - name: Start Cloudflare Tunnel
+        run: |
+          set -Eeuo pipefail
+          [ -n "$CF_TUNNEL_TOKEN" ] || { echo "CF_TUNNEL_TOKEN secret is not set"; exit 1; }
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+          chmod +x /usr/local/bin/cloudflared
+          nohup cloudflared tunnel --no-autoupdate run --token "$CF_TUNNEL_TOKEN" > tunnel.log 2>&1 &
+          echo $! > /tmp/cloudflared.pid
+          sleep 10
+          kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
+
+      - name: Keep services alive
+        if: always()
+        run: |
+          set -u
+          end=$((SECONDS + RUN_DURATION))
+          while [ "$SECONDS" -lt "$end" ]; do
+            kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
+            curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null || { echo "chatgpt2api is unhealthy"; exit 1; }
+            kill -0 "$(cat /tmp/register.pid)" 2>/dev/null || { echo "registration service exited"; exit 1; }
+            curl -fsS -m 3 http://127.0.0.1:5000/login >/dev/null || { echo "registration service is unhealthy"; exit 1; }
+            kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
+            sleep 30
+          done
+        shell: bash
+
+      - name: Print redacted diagnostics
+        if: always()
+        run: |
+          for log in chatgpt2api.log register.log tunnel.log; do
+            [ -f "$log" ] || continue
+            echo "=== $log ==="
+            tail -100 "$log" | sed -E \
+              -e 's#https?://[^[:space:]]+#<url>#g' \
+              -e 's#(token|authorization|cookie|password)[=: ]+[^[:space:]]+#\1=***#Ig' || true
+          done
