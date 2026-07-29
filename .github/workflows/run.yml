@@ -14,8 +14,6 @@ env:
   CHATGPT2API_REPO: frjzyb31183k/chatgpt2api
   REGISTER_REPO: frjzyb31183k/turb-gpt-free-register
   RUN_DURATION: 19800
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
 
 jobs:
   run:
@@ -55,6 +53,8 @@ jobs:
         working-directory: chatgpt2api
 
       - name: Start services
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -Eeuo pipefail
           (
@@ -62,7 +62,7 @@ jobs:
             STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 > register.log 2>&1 &
+          env -u DATABASE_URL uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 > register.log 2>&1 &
           echo $! > /tmp/register.pid
 
           ready() {
@@ -116,6 +116,8 @@ jobs:
           curl -fsS -m 3 http://127.0.0.1:8080/register/login >/dev/null
 
       - name: Start Cloudflare Tunnel
+        env:
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
         run: |
           set -Eeuo pipefail
           [ -n "$CF_TUNNEL_TOKEN" ] || { echo "CF_TUNNEL_TOKEN secret is not set"; exit 1; }
