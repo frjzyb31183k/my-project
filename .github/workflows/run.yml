@@ -86,7 +86,7 @@ jobs:
           [ "$code" != "000" ] || { echo "WARP SOCKS5 transport failed"; exit 1; }
           echo "WARP SOCKS5 ready: 127.0.0.1:40000 (HTTP $code)"
 
-      - name: Batch register 300 accounts (CLI)
+      - name: Batch register 300 
         working-directory: turb-gpt-free-register
         run: |
           export CAMOUFOX_USE_PROXY=false
