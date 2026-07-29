@@ -62,7 +62,7 @@ jobs:
             STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          uv run --directory chatgpt2api python turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 > register.log 2>&1 &
+          uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 > register.log 2>&1 &
           echo $! > /tmp/register.pid
 
           ready() {
