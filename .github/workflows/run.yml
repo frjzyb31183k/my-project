@@ -1,4 +1,4 @@
-name: Run 
+name: Run
 
 on:
   workflow_dispatch:
@@ -12,7 +12,6 @@ concurrency:
 
 env:
   CHATGPT2API_REPO: frjzyb31183k/chatgpt2api
-  REGISTER_REPO: frjzyb31183k/turb-gpt-free-register
   RUN_DURATION: 19800
 
 jobs:
@@ -31,14 +30,6 @@ jobs:
           path: chatgpt2api
           fetch-depth: 1
 
-      - name: Checkout registration service
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.REGISTER_REPO }}
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          path: turb-gpt-free-register
-          fetch-depth: 1
-
       - name: Set up Python and uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -51,19 +42,13 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies
+        working-directory: chatgpt2api
         run: |
           set -Eeuo pipefail
           uv sync
-          uv pip install --python .venv camoufox curl_cffi
-          uv pip install --python .venv -r ../turb-gpt-free-register/requirements.txt
           npm install --prefix web
           NEXT_PUBLIC_APP_VERSION="$(cat VERSION)" npm run build --prefix web
           mv web/out web_dist
-        working-directory: chatgpt2api
-
-      - name: Download Camoufox browser
-        working-directory: chatgpt2api
-        run: ./.venv/bin/python -m camoufox fetch
 
       - name: Install and start WARP SOCKS5
         run: |
@@ -86,77 +71,33 @@ jobs:
           [ "$code" != "000" ] || { echo "WARP SOCKS5 transport failed"; exit 1; }
           echo "WARP SOCKS5 ready: 127.0.0.1:40000 (HTTP $code)"
 
-      - name: Start services
+      - name: Start chatgpt2api
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
-          WEBUI_AUTH_CODE: ${{ secrets.WEBUI_AUTH_CODE }}
           CHATGPT2API_PROXY_RUNTIME_ENABLED: "true"
           CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
           CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
           CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
           CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "false"
-          PROXY_POOL: socks5h://127.0.0.1:40000
-          PLAN_CHECK_PROXY: socks5h://127.0.0.1:40000
-          PLAN_CHECK_PROXY_MODE: proxy
         run: |
           set -Eeuo pipefail
           (
             cd chatgpt2api
             CHATGPT2API_CONFIG_FILE="$PWD/config.json" uv run python scripts/init_proxy_config.py
-            STORAGE_BACKEND=session_network DATABASE_URL="$DATABASE_URL" SESSION_DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
+            STORAGE_BACKEND=session_network \
+              DATABASE_URL="$DATABASE_URL" \
+              SESSION_DATABASE_URL="$DATABASE_URL" \
+              uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          env -u DATABASE_URL \
-            PROXY_POOL="$PROXY_POOL" \
-            PLAN_CHECK_PROXY="$PLAN_CHECK_PROXY" \
-            PLAN_CHECK_PROXY_MODE="$PLAN_CHECK_PROXY_MODE" \
-            uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 --auth-code "$WEBUI_AUTH_CODE" > register.log 2>&1 &
-          echo $! > /tmp/register.pid
-
-          ready() {
-            local url="$1" pid_file="$2"
-            for _ in $(seq 1 90); do
-              curl -fsS -m 3 "$url" >/dev/null && return 0
-              kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
-              sleep 2
-            done
-            return 1
-          }
-          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
-          ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; tail -100 register.log; exit 1; }
-          echo "Services ready"
-
-      - name: Batch register 300
-        working-directory: chatgpt2api
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SESSION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CLOUDFLARE_API_BASE: ${{ secrets.CLOUDFLARE_API_BASE }}
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          CLOUDFLARE_AUTH_MODE: ${{ secrets.CLOUDFLARE_AUTH_MODE }}
-          CLOUDFLARE_SSL_VERIFY: ${{ secrets.CLOUDFLARE_SSL_VERIFY }}
-        run: |
-          set -Eeuo pipefail
-          [ -n "${SESSION_DATABASE_URL:-}" ] || { echo "SESSION_DATABASE_URL/DATABASE_URL secret is not set"; exit 1; }
-          export CAMOUFOX_USE_PROXY=true
-          export REGISTRATION_DRIVER=camoufox
-          export EMAIL_SOURCE=tempmail,qxfy,cloudflare
-          export USE_EMAIL_SERVICE=true
-          export CLOUDFLARE_API_BASE=${CLOUDFLARE_API_BASE:-https://cloudflare_temp_email.logincore.workers.dev}
-          export CLOUDFLARE_API_KEY=${CLOUDFLARE_API_KEY:-}
-          export CLOUDFLARE_AUTH_MODE=${CLOUDFLARE_AUTH_MODE:-none}
-          export CLOUDFLARE_SSL_VERIFY=${CLOUDFLARE_SSL_VERIFY:-false}
-          export PROXY_POOL=socks5h://127.0.0.1:40000
-          export PLAN_CHECK_PROXY=socks5h://127.0.0.1:40000
-          export PLAN_CHECK_PROXY_MODE=proxy
-          export SYNC_ENABLED=true
-          export SYNC_URL=
-          # 后台注册，不阻塞后续 tunnel / keep-alive；写网络库供已启动的 chatgpt2api 直接读取
-          nohup ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 3 --continue-on-fail \
-            > ../batch-register.log 2>&1 &
-          echo $! > /tmp/batch-register.pid
-          echo "Batch register started pid=$(cat /tmp/batch-register.pid)"
+          for _ in $(seq 1 90); do
+            curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null && break
+            kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; tail -100 chatgpt2api.log; exit 1; }
+            sleep 2
+          done
+          curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
+          echo "chatgpt2api ready"
 
       - name: Route gpt paths locally
         run: |
@@ -166,22 +107,6 @@ jobs:
           sudo tee /etc/nginx/sites-available/gpt >/dev/null <<'EOF'
           server {
             listen 127.0.0.1:8080;
-
-            location = /register { return 301 /register/; }
-            location /register/ {
-              proxy_pass http://127.0.0.1:5000/;
-              proxy_set_header Host $host;
-              proxy_set_header X-Forwarded-Proto https;
-              proxy_set_header Accept-Encoding "";
-              proxy_redirect ~^(/.*)$ /register$1;
-              proxy_cookie_path / /register/;
-              sub_filter_once off;
-              sub_filter_types text/html application/javascript;
-              sub_filter "'/api/" "'/register/api/";
-              sub_filter '"/api/' '"/register/api/';
-              sub_filter 'action="/login"' 'action="/register/login"';
-              sub_filter 'action="/logout"' 'action="/register/logout"';
-            }
             location / {
               proxy_pass http://127.0.0.1:8000;
               proxy_set_header Host $host;
@@ -194,7 +119,6 @@ jobs:
           sudo nginx -t
           sudo systemctl restart nginx
           curl -fsS -m 3 http://127.0.0.1:8080/health >/dev/null
-          curl -fsS -m 3 http://127.0.0.1:8080/register/login >/dev/null
 
       - name: Start Cloudflare Tunnel
         env:
@@ -213,42 +137,17 @@ jobs:
         run: |
           set -u
           end=$((SECONDS + RUN_DURATION))
-          last_reg_tail=0
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
             curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null || { echo "chatgpt2api is unhealthy"; exit 1; }
-            kill -0 "$(cat /tmp/register.pid)" 2>/dev/null || { echo "registration service exited"; exit 1; }
-            curl -fsS -m 3 http://127.0.0.1:5000/login >/dev/null || { echo "registration service is unhealthy"; exit 1; }
             kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
-
-            # 每 5 分钟 tail 一次批量注册进度（不因注册退出而失败 job）
-            now=$(date +%s)
-            if [ $((now - last_reg_tail)) -ge 300 ]; then
-              last_reg_tail=$now
-              reg_pid=$(cat /tmp/batch-register.pid 2>/dev/null || echo 0)
-              if kill -0 "$reg_pid" 2>/dev/null; then
-                echo "=== batch-register still running pid=$reg_pid ==="
-              else
-                echo "=== batch-register finished (pid gone) ==="
-              fi
-              if [ -f batch-register.log ]; then
-                echo "=== batch-register.log (tail) ==="
-                tail -30 batch-register.log | sed -E \
-                  -e 's#(https?|postgres(ql)?)://[^[:space:]]+#<url>#g' \
-                  -e 's#(token|authorization|cookie|password|accessToken)[=: ]+[^[:space:]]+#\1=***#Ig' \
-                  -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#<jwt>#g' || true
-              else
-                echo "batch-register.log missing"
-              fi
-            fi
             sleep 30
           done
-        shell: bash
 
       - name: Print redacted diagnostics
         if: always()
         run: |
-          for log in chatgpt2api.log register.log tunnel.log batch-register.log; do
+          for log in chatgpt2api.log tunnel.log; do
             [ -f "$log" ] || continue
             echo "=== $log ==="
             tail -100 "$log" | sed -E \
