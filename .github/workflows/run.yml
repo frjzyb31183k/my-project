@@ -88,7 +88,7 @@ jobs:
             STORAGE_BACKEND=session_network \
               DATABASE_URL="$DATABASE_URL" \
               SESSION_DATABASE_URL="$DATABASE_URL" \
-              nohup uv run main.py > ../chatgpt2api.log 2>&1 &
+              nohup uv run uvicorn api:app --host 127.0.0.1 --port 3000 > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
           # 与 6d459a2 相同：curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
@@ -101,11 +101,11 @@ jobs:
             done
             return 1
           }
-          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid \
+          ready http://127.0.0.1:3000/health /tmp/chatgpt2api.pid \
             || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
-          echo "chatgpt2api ready"
+          echo "chatgpt2api ready on :3000"
 
-      # Cloudflare Tunnel 直接代理 127.0.0.1:8000（仪表盘/本地 config 需指向该地址，无需 nginx）
+      # Cloudflare Tunnel 直接代理 127.0.0.1:3000（仪表盘/本地 config 需指向该地址，无需 nginx）
       - name: Start Cloudflare Tunnel
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
@@ -125,7 +125,7 @@ jobs:
           end=$((SECONDS + RUN_DURATION))
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
-            curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null || { echo "chatgpt2api is unhealthy"; exit 1; }
+            curl -fsS -m 3 http://127.0.0.1:3000/health >/dev/null || { echo "chatgpt2api is unhealthy"; exit 1; }
             kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
             sleep 30
           done
