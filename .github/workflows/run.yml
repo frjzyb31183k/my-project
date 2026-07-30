@@ -88,7 +88,7 @@ jobs:
             STORAGE_BACKEND=session_network \
               DATABASE_URL="$DATABASE_URL" \
               SESSION_DATABASE_URL="$DATABASE_URL" \
-              nohup uv run uvicorn api:app --host 127.0.0.1 --port 3000 > ../chatgpt2api.log 2>&1 &
+              nohup uv run uvicorn main:app --host 127.0.0.1 --port 3000 > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
           # 与 6d459a2 相同：curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
