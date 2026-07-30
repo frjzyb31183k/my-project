@@ -103,7 +103,7 @@ jobs:
           export PLAN_CHECK_PROXY_MODE=proxy
           export SYNC_ENABLED=true
           export SYNC_URL=
-          ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 1 --continue-on-fail
+          ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 3 --continue-on-fail
 
       - name: Start services
         env:
