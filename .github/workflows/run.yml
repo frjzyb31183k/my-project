@@ -88,24 +88,25 @@ jobs:
             STORAGE_BACKEND=session_network \
               DATABASE_URL="$DATABASE_URL" \
               SESSION_DATABASE_URL="$DATABASE_URL" \
-              nohup uv run uvicorn main:app --host 127.0.0.1 --port 3000 > ../chatgpt2api.log 2>&1 &
+              # Tunnel 远端仍指向 8080（旧 nginx）；无 nginx 时服务直接听 8080
+            nohup uv run uvicorn main:app --host 127.0.0.1 --port 8080 > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          # 与 6d459a2 相同：curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
+          # curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
           ready() {
             local url="$1" pid_file="$2"
             for _ in $(seq 1 90); do
-              curl -fsS -m 3 "$url" >/dev/null && return 0
+              curl -fsS -m 5 "$url" >/dev/null && return 0
               kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
               sleep 2
             done
             return 1
           }
-          ready http://127.0.0.1:3000/health /tmp/chatgpt2api.pid \
+          ready http://127.0.0.1:8080/health /tmp/chatgpt2api.pid \
             || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
-          echo "chatgpt2api ready on :3000"
+          echo "chatgpt2api ready on :8080"
 
-      # Cloudflare Tunnel 直接代理 127.0.0.1:3000（仪表盘/本地 config 需指向该地址，无需 nginx）
+      # Cloudflare Tunnel origin 需为 http://127.0.0.1:8080
       - name: Start Cloudflare Tunnel
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
@@ -125,7 +126,13 @@ jobs:
           end=$((SECONDS + RUN_DURATION))
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
-            curl -fsS -m 3 http://127.0.0.1:3000/health >/dev/null || { echo "chatgpt2api is unhealthy"; exit 1; }
+            # health 偶发超时不直接杀 job；连续失败再退出
+            if ! curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null; then
+              echo "chatgpt2api health miss, retry..."
+              sleep 5
+              curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null \
+                || { echo "chatgpt2api is unhealthy"; tail -50 chatgpt2api.log || true; exit 1; }
+            fi
             kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
             sleep 30
           done
