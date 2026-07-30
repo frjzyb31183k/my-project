@@ -91,13 +91,21 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SESSION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLOUDFLARE_API_BASE: ${{ secrets.CLOUDFLARE_API_BASE }}
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_AUTH_MODE: ${{ secrets.CLOUDFLARE_AUTH_MODE }}
+          CLOUDFLARE_SSL_VERIFY: ${{ secrets.CLOUDFLARE_SSL_VERIFY }}
         run: |
           set -Eeuo pipefail
           [ -n "${SESSION_DATABASE_URL:-}" ] || { echo "SESSION_DATABASE_URL/DATABASE_URL secret is not set"; exit 1; }
           export CAMOUFOX_USE_PROXY=true
           export REGISTRATION_DRIVER=camoufox
-          export EMAIL_SOURCE=tempmail,qxfy
+          export EMAIL_SOURCE=tempmail,qxfy,cloudflare
           export USE_EMAIL_SERVICE=true
+          export CLOUDFLARE_API_BASE=${CLOUDFLARE_API_BASE:-https://cloudflare_temp_email.logincore.workers.dev}
+          export CLOUDFLARE_API_KEY=${CLOUDFLARE_API_KEY:-}
+          export CLOUDFLARE_AUTH_MODE=${CLOUDFLARE_AUTH_MODE:-none}
+          export CLOUDFLARE_SSL_VERIFY=${CLOUDFLARE_SSL_VERIFY:-false}
           export PROXY_POOL=socks5h://127.0.0.1:40000
           export PLAN_CHECK_PROXY=socks5h://127.0.0.1:40000
           export PLAN_CHECK_PROXY_MODE=proxy
