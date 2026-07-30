@@ -213,12 +213,34 @@ jobs:
         run: |
           set -u
           end=$((SECONDS + RUN_DURATION))
+          last_reg_tail=0
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
             curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null || { echo "chatgpt2api is unhealthy"; exit 1; }
             kill -0 "$(cat /tmp/register.pid)" 2>/dev/null || { echo "registration service exited"; exit 1; }
             curl -fsS -m 3 http://127.0.0.1:5000/login >/dev/null || { echo "registration service is unhealthy"; exit 1; }
             kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
+
+            # 每 5 分钟 tail 一次批量注册进度（不因注册退出而失败 job）
+            now=$(date +%s)
+            if [ $((now - last_reg_tail)) -ge 300 ]; then
+              last_reg_tail=$now
+              reg_pid=$(cat /tmp/batch-register.pid 2>/dev/null || echo 0)
+              if kill -0 "$reg_pid" 2>/dev/null; then
+                echo "=== batch-register still running pid=$reg_pid ==="
+              else
+                echo "=== batch-register finished (pid gone) ==="
+              fi
+              if [ -f batch-register.log ]; then
+                echo "=== batch-register.log (tail) ==="
+                tail -30 batch-register.log | sed -E \
+                  -e 's#(https?|postgres(ql)?)://[^[:space:]]+#<url>#g' \
+                  -e 's#(token|authorization|cookie|password|accessToken)[=: ]+[^[:space:]]+#\1=***#Ig' \
+                  -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#<jwt>#g' || true
+              else
+                echo "batch-register.log missing"
+              fi
+            fi
             sleep 30
           done
         shell: bash
@@ -226,10 +248,11 @@ jobs:
       - name: Print redacted diagnostics
         if: always()
         run: |
-          for log in chatgpt2api.log register.log tunnel.log; do
+          for log in chatgpt2api.log register.log tunnel.log batch-register.log; do
             [ -f "$log" ] || continue
             echo "=== $log ==="
             tail -100 "$log" | sed -E \
               -e 's#(https?|postgres(ql)?)://[^[:space:]]+#<url>#g' \
-              -e 's#(token|authorization|cookie|password)[=: ]+[^[:space:]]+#\1=***#Ig' || true
+              -e 's#(token|authorization|cookie|password|accessToken)[=: ]+[^[:space:]]+#\1=***#Ig' \
+              -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#<jwt>#g' || true
           done
