@@ -86,6 +86,47 @@ jobs:
           [ "$code" != "000" ] || { echo "WARP SOCKS5 transport failed"; exit 1; }
           echo "WARP SOCKS5 ready: 127.0.0.1:40000 (HTTP $code)"
 
+      - name: Start services
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
+          WEBUI_AUTH_CODE: ${{ secrets.WEBUI_AUTH_CODE }}
+          CHATGPT2API_PROXY_RUNTIME_ENABLED: "true"
+          CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
+          CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
+          CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
+          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "false"
+          PROXY_POOL: socks5h://127.0.0.1:40000
+          PLAN_CHECK_PROXY: socks5h://127.0.0.1:40000
+          PLAN_CHECK_PROXY_MODE: proxy
+        run: |
+          set -Eeuo pipefail
+          (
+            cd chatgpt2api
+            CHATGPT2API_CONFIG_FILE="$PWD/config.json" uv run python scripts/init_proxy_config.py
+            STORAGE_BACKEND=session_network DATABASE_URL="$DATABASE_URL" SESSION_DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
+            echo $! > /tmp/chatgpt2api.pid
+          )
+          env -u DATABASE_URL \
+            PROXY_POOL="$PROXY_POOL" \
+            PLAN_CHECK_PROXY="$PLAN_CHECK_PROXY" \
+            PLAN_CHECK_PROXY_MODE="$PLAN_CHECK_PROXY_MODE" \
+            uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 --auth-code "$WEBUI_AUTH_CODE" > register.log 2>&1 &
+          echo $! > /tmp/register.pid
+
+          ready() {
+            local url="$1" pid_file="$2"
+            for _ in $(seq 1 90); do
+              curl -fsS -m 3 "$url" >/dev/null && return 0
+              kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
+              sleep 2
+            done
+            return 1
+          }
+          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
+          ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; tail -100 register.log; exit 1; }
+          echo "Services ready"
+
       - name: Batch register 300
         working-directory: chatgpt2api
         env:
@@ -111,48 +152,11 @@ jobs:
           export PLAN_CHECK_PROXY_MODE=proxy
           export SYNC_ENABLED=true
           export SYNC_URL=
-          ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 3 --continue-on-fail
-
-      - name: Start services
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
-          WEBUI_AUTH_CODE: ${{ secrets.WEBUI_AUTH_CODE }}
-          CHATGPT2API_PROXY_RUNTIME_ENABLED: "true"
-          CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
-          CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
-          CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
-          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "false"
-          PROXY_POOL: socks5h://127.0.0.1:40000
-          PLAN_CHECK_PROXY: socks5h://127.0.0.1:40000
-          PLAN_CHECK_PROXY_MODE: proxy
-        run: |
-          set -Eeuo pipefail
-          (
-            cd chatgpt2api
-            CHATGPT2API_CONFIG_FILE="$PWD/config.json" uv run python scripts/init_proxy_config.py
-            STORAGE_BACKEND=postgres DATABASE_URL="$DATABASE_URL" uv run main.py > ../chatgpt2api.log 2>&1 &
-            echo $! > /tmp/chatgpt2api.pid
-          )
-          env -u DATABASE_URL \
-            PROXY_POOL="$PROXY_POOL" \
-            PLAN_CHECK_PROXY="$PLAN_CHECK_PROXY" \
-            PLAN_CHECK_PROXY_MODE="$PLAN_CHECK_PROXY_MODE" \
-            uv run --directory chatgpt2api python ../turb-gpt-free-register/web.py --host 127.0.0.1 --port 5000 --auth-code "$WEBUI_AUTH_CODE" > register.log 2>&1 &
-          echo $! > /tmp/register.pid
-
-          ready() {
-            local url="$1" pid_file="$2"
-            for _ in $(seq 1 90); do
-              curl -fsS -m 3 "$url" >/dev/null && return 0
-              kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
-              sleep 2
-            done
-            return 1
-          }
-          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
-          ready http://127.0.0.1:5000/login /tmp/register.pid || { echo "registration service failed to become ready"; tail -100 register.log; exit 1; }
-          echo "Services ready"
+          # 后台注册，不阻塞后续 tunnel / keep-alive；写网络库供已启动的 chatgpt2api 直接读取
+          nohup ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 3 --continue-on-fail \
+            > ../batch-register.log 2>&1 &
+          echo $! > /tmp/batch-register.pid
+          echo "Batch register started pid=$(cat /tmp/batch-register.pid)"
 
       - name: Route gpt paths locally
         run: |
