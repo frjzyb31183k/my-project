@@ -96,7 +96,7 @@ jobs:
           [ -n "${SESSION_DATABASE_URL:-}" ] || { echo "SESSION_DATABASE_URL/DATABASE_URL secret is not set"; exit 1; }
           export CAMOUFOX_USE_PROXY=true
           export REGISTRATION_DRIVER=camoufox
-          export EMAIL_SOURCE=tempmail,qxfy,cloudflare
+          export EMAIL_SOURCE=tempmail,qxfy
           export USE_EMAIL_SERVICE=true
           export PROXY_POOL=socks5h://127.0.0.1:40000
           export PLAN_CHECK_PROXY=socks5h://127.0.0.1:40000
