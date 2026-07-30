@@ -88,7 +88,12 @@ jobs:
 
       - name: Batch register 300
         working-directory: chatgpt2api
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SESSION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
+          set -Eeuo pipefail
+          [ -n "${SESSION_DATABASE_URL:-}" ] || { echo "SESSION_DATABASE_URL/DATABASE_URL secret is not set"; exit 1; }
           export CAMOUFOX_USE_PROXY=true
           export REGISTRATION_DRIVER=camoufox
           export EMAIL_SOURCE=tempmail,qxfy,cloudflare
@@ -96,6 +101,9 @@ jobs:
           export PROXY_POOL=socks5h://127.0.0.1:40000
           export PLAN_CHECK_PROXY=socks5h://127.0.0.1:40000
           export PLAN_CHECK_PROXY_MODE=proxy
+          export SYNC_ENABLED=true
+          # env_str 空值会回退默认 3000；用占位禁止 HTTP，账号写入 SESSION_DATABASE_URL
+          export SYNC_URL=http://127.0.0.1:1/disabled
           ./.venv/bin/python -u ../turb-gpt-free-register/main.py -n 300 --workers 1 --continue-on-fail
 
       - name: Start services
