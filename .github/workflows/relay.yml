@@ -2,7 +2,7 @@ name: WinRunner Relay
 
 on:
   workflow_run:
-    workflows: ["Run Service"]
+    workflows: ["Run"]
     types: [completed]
 
 permissions:

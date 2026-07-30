@@ -99,27 +99,7 @@ jobs:
           curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
           echo "chatgpt2api ready"
 
-      - name: Route gpt paths locally
-        run: |
-          set -Eeuo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq nginx
-          sudo tee /etc/nginx/sites-available/gpt >/dev/null <<'EOF'
-          server {
-            listen 127.0.0.1:8080;
-            location / {
-              proxy_pass http://127.0.0.1:8000;
-              proxy_set_header Host $host;
-              proxy_set_header X-Forwarded-Proto https;
-            }
-          }
-          EOF
-          sudo ln -sf /etc/nginx/sites-available/gpt /etc/nginx/sites-enabled/gpt
-          sudo rm -f /etc/nginx/sites-enabled/default
-          sudo nginx -t
-          sudo systemctl restart nginx
-          curl -fsS -m 3 http://127.0.0.1:8080/health >/dev/null
-
+      # Cloudflare Tunnel 直接代理 127.0.0.1:8000（仪表盘/本地 config 需指向该地址，无需 nginx）
       - name: Start Cloudflare Tunnel
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
