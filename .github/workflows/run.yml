@@ -88,28 +88,22 @@ jobs:
             STORAGE_BACKEND=session_network \
               DATABASE_URL="$DATABASE_URL" \
               SESSION_DATABASE_URL="$DATABASE_URL" \
-              uv run main.py > ../chatgpt2api.log 2>&1 &
+              nohup uv run main.py > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
-          # 不用 set -e，手动 check curl 状态
-          set +e
-          for _ in $(seq 1 90); do
-            curl -fsS -m 3 http://127.0.0.1:8000/health >/dev/null
-            if [ $? -eq 0 ]; then
-              set -e
-              echo "chatgpt2api ready"
-              exit 0
-            fi
-            if ! kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null; then
-              echo "chatgpt2api exited"
-              tail -100 ../chatgpt2api.log
-              exit 1
-            fi
-            sleep 5
-          done
-          echo "chatgpt2api failed to become ready"
-          tail -100 ../chatgpt2api.log
-          exit 1
+          # 与 6d459a2 相同：curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
+          ready() {
+            local url="$1" pid_file="$2"
+            for _ in $(seq 1 90); do
+              curl -fsS -m 3 "$url" >/dev/null && return 0
+              kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
+              sleep 2
+            done
+            return 1
+          }
+          ready http://127.0.0.1:8000/health /tmp/chatgpt2api.pid \
+            || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
+          echo "chatgpt2api ready"
 
       # Cloudflare Tunnel 直接代理 127.0.0.1:8000（仪表盘/本地 config 需指向该地址，无需 nginx）
       - name: Start Cloudflare Tunnel
