@@ -123,6 +123,8 @@ jobs:
       - name: Keep services alive
         run: |
           set -u
+          # 多 worker uvicorn 启动较慢，等 startup 完成后再开始探活
+          sleep 10
           end=$((SECONDS + RUN_DURATION))
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
