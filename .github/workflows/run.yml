@@ -89,7 +89,7 @@ jobs:
               DATABASE_URL="$DATABASE_URL" \
               SESSION_DATABASE_URL="$DATABASE_URL" \
               # Tunnel 远端仍指向 8080（旧 nginx）；无 nginx 时服务直接听 8080
-            nohup uv run uvicorn main:app --host 127.0.0.1 --port 8080 > ../chatgpt2api.log 2>&1 &
+            nohup uv run uvicorn main:app --host 127.0.0.1 --port 8080 --workers 2 > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
           # curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
