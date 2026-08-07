@@ -96,7 +96,7 @@ jobs:
           ready() {
             local url="$1" pid_file="$2"
             for _ in $(seq 1 90); do
-              curl -fsS -m 5 "$url" >/dev/null && return 0
+              curl -fsS -m 5 --noproxy '*' "$url" >/dev/null && return 0
               kill -0 "$(cat "$pid_file")" 2>/dev/null || return 1
               sleep 2
             done
@@ -127,10 +127,10 @@ jobs:
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
             # health 偶发超时不直接杀 job；连续失败再退出
-            if ! curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null; then
+            if ! curl -fsS -m 5 --noproxy '*' http://127.0.0.1:8080/health >/dev/null; then
               echo "chatgpt2api health miss, retry..."
               sleep 5
-              curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null \
+              curl -fsS -m 5 --noproxy '*' http://127.0.0.1:8080/health >/dev/null \
                 || { echo "chatgpt2api is unhealthy"; tail -50 chatgpt2api.log || true; exit 1; }
             fi
             kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
