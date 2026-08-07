@@ -123,21 +123,27 @@ jobs:
       - name: Keep services alive
         run: |
           set -u
-          # 多 worker uvicorn 启动较慢，等 startup 完成后再开始探活
-          sleep 10
           end=$((SECONDS + RUN_DURATION))
+          for _ in $(seq 1 45); do
+            kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
+            if curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null 2>&1; then break; fi
+            sleep 4
+          done
+          curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null \
+            || { echo "chatgpt2api never became ready within grace"; tail -50 chatgpt2api.log; exit 1; }
+          echo "chatgpt2api ready, entering keepalive loop"
           while [ "$SECONDS" -lt "$end" ]; do
             kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
-            # health 偶发超时不直接杀 job；连续失败再退出
-            if ! curl -fsS -m 5 --noproxy '*' http://127.0.0.1:8080/health >/dev/null; then
+            if ! curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null; then
               echo "chatgpt2api health miss, retry..."
-              sleep 5
-              curl -fsS -m 5 --noproxy '*' http://127.0.0.1:8080/health >/dev/null \
+              sleep 10
+              curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null \
                 || { echo "chatgpt2api is unhealthy"; tail -50 chatgpt2api.log || true; exit 1; }
             fi
             kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
             sleep 30
           done
+
 
       - name: Print redacted diagnostics
         if: always()
