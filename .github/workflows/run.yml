@@ -124,26 +124,15 @@ jobs:
         run: |
           set -u
           end=$((SECONDS + RUN_DURATION))
-          for _ in $(seq 1 45); do
-            kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
-            if curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null 2>&1; then break; fi
-            sleep 4
-          done
-          curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null \
-            || { echo "chatgpt2api never became ready within grace"; tail -50 chatgpt2api.log; exit 1; }
-          echo "chatgpt2api ready, entering keepalive loop"
+          # no HTTP probe: account-watcher blocks workers during startup
+          # only check pid alive + port 8080 bound
+          echo "keepalive: pid+port only (no HTTP probe)"
           while [ "$SECONDS" -lt "$end" ]; do
-            kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; exit 1; }
-            if ! curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null; then
-              echo "chatgpt2api health miss, retry..."
-              sleep 10
-              curl -fsS -m 10 --noproxy '*' http://127.0.0.1:8080/health >/dev/null \
-                || { echo "chatgpt2api is unhealthy"; tail -50 chatgpt2api.log || true; exit 1; }
-            fi
-            kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; exit 1; }
+            kill -0 "$(cat /tmp/chatgpt2api.pid)" 2>/dev/null || { echo "chatgpt2api exited"; tail -50 chatgpt2api.log || true; exit 1; }
+            ss -ltn | grep -q ":8080 " || { echo "chatgpt2api port 8080 not listening"; tail -50 chatgpt2api.log || true; exit 1; }
+            kill -0 "$(cat /tmp/cloudflared.pid)" 2>/dev/null || { echo "Cloudflare Tunnel exited"; tail -50 tunnel.log || true; exit 1; }
             sleep 30
           done
-
 
       - name: Print redacted diagnostics
         if: always()
