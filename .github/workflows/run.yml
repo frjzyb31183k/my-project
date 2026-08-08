@@ -74,6 +74,8 @@ jobs:
       - name: Start chatgpt2api
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SESSION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          STORAGE_BACKEND: session_network
           CHATGPT2API_AUTH_KEY: ${{ secrets.CHATGPT2API_AUTH_KEY }}
           CHATGPT2API_PROXY_RUNTIME_ENABLED: "true"
           CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
@@ -85,11 +87,9 @@ jobs:
           (
             cd chatgpt2api
             CHATGPT2API_CONFIG_FILE="$PWD/config.json" uv run python scripts/init_proxy_config.py
-            STORAGE_BACKEND=session_network \
-              DATABASE_URL="$DATABASE_URL" \
-              SESSION_DATABASE_URL="$DATABASE_URL" \
-              # Tunnel 远端仍指向 8080（旧 nginx）；无 nginx 时服务直接听 8080
-            nohup uv run uvicorn main:app --host 127.0.0.1 --port 8080 --workers 2 > ../chatgpt2api.log 2>&1 &
+            # Tunnel 远端仍指向 8080；无 nginx 时服务直接听 8080
+            # 单 worker：进度/outbox/号池均为进程内状态，多 worker 会互相覆盖
+            nohup uv run uvicorn main:app --host 127.0.0.1 --port 8080 --workers 1 > ../chatgpt2api.log 2>&1 &
             echo $! > /tmp/chatgpt2api.pid
           )
           # curl 失败放在函数/|| 里，避免 set -e 直接杀脚本
