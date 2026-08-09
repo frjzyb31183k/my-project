@@ -47,6 +47,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           uv sync
+          uv pip install python-dotenv
           npm install --prefix web
           NEXT_PUBLIC_APP_VERSION="$(cat VERSION)" npm run build --prefix web
           mv web/out web_dist
