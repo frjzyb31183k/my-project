@@ -35,7 +35,7 @@ jobs:
         with:
           version: latest
           python-version: "3.13"
-          cache: false
+          enable-cache: "false"
 
       - name: Set up Node
         uses: actions/setup-node@v4
