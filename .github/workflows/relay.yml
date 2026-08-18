@@ -18,6 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success'
     steps:
+      - name: Time gate (Beijing 10:00-22:00 only)
+        run: |
+          hour=$(TZ='Asia/Shanghai' date +%H)
+          if [ "$hour" -lt 10 ] || [ "$hour" -ge 22 ]; then
+            echo "Outside Beijing 10:00-22:00 (now ${hour}:00), skipping relay"
+            exit 0
+          fi
+          echo "Within Beijing window (now ${hour}:00), continuing relay"
+
       - name: Wait before next run
         run: sleep 30
 

@@ -2,6 +2,8 @@ name: Run
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '33 0 * * *'   # UTC 00:33 = 北京时间 08:33
 
 permissions:
   contents: read
