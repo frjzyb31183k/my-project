@@ -84,7 +84,7 @@ jobs:
           CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
           CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
           CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "false"
-          CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS: "true"
+          CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS: "false"
         run: |
           set -Eeuo pipefail
           (
