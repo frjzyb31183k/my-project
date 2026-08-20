@@ -6,7 +6,7 @@ on:
     - cron: '33 0 * * *'   # UTC 00:33 = 北京时间 08:33
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: run-group
@@ -95,7 +95,7 @@ jobs:
           CHATGPT2API_PROXY_RUNTIME_ENABLED: "true"
           CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
           CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
-          CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
+          CHATGPT2API_PROXY_RUNTIME_FORCE: "false"
           CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "true"
           CHATGPT2API_PROXY_RUNTIME_CLEARANCE_MODE: flaresolverr
           CHATGPT2API_PROXY_RUNTIME_CLEARANCE_URL: http://127.0.0.1:8191
@@ -123,6 +123,19 @@ jobs:
           ready 8080 /tmp/chatgpt2api.pid \
             || { echo "chatgpt2api failed to become ready"; tail -100 chatgpt2api.log; exit 1; }
           echo "chatgpt2api ready on :8080"
+
+      - name: Push runtime config back to repo
+        if: always()
+        env:
+          PRIVATE_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          cd chatgpt2api
+          git config user.name "runner"
+          git config user.email "runner@users.noreply.github.com"
+          git add config.json
+          git -c commit.gpgsign=false commit -m "chore: sync runtime proxy_runtime config" || { echo "no config changes"; exit 0; }
+          git push "https://x-access-token:${PRIVATE_TOKEN}@github.com/${CHATGPT2API_REPO}.git" HEAD:main
 
       # Cloudflare Tunnel origin 需为 http://127.0.0.1:8080
       - name: Start Cloudflare Tunnel
