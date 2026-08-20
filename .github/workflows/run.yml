@@ -75,6 +75,17 @@ jobs:
           [ "$code" != "000" ] || { echo "WARP SOCKS5 transport failed"; exit 1; }
           echo "WARP SOCKS5 ready: 127.0.0.1:40000 (HTTP $code)"
 
+      - name: Start FlareSolverr
+        run: |
+          set -Eeuo pipefail
+          docker run -d --name flaresolverr --network host ghcr.io/flaresolverr/flaresolverr:latest
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8191/health >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8191/health >/dev/null
+          echo "FlareSolverr ready on :8191"
+
       - name: Start chatgpt2api
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -85,7 +96,9 @@ jobs:
           CHATGPT2API_PROXY_RUNTIME_EGRESS_MODE: single_proxy
           CHATGPT2API_PROXY_RUNTIME_PROXY_URL: socks5h://127.0.0.1:40000
           CHATGPT2API_PROXY_RUNTIME_FORCE: "true"
-          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "false"
+          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_ENABLED: "true"
+          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_MODE: flaresolverr
+          CHATGPT2API_PROXY_RUNTIME_CLEARANCE_URL: http://127.0.0.1:8191
           CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS: "false"
         run: |
           set -Eeuo pipefail
